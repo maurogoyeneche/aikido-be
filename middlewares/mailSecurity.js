@@ -51,17 +51,28 @@ const looksLikeGibberish = (str) => {
   return false;
 };
 
+const reject = (req, res, status, reason, publicMessage) => {
+  console.warn(`[mail-validation] rejected (${reason})`, {
+    bodyKeys: Object.keys(req.body || {}),
+    nameLen: req.body?.name?.length,
+    emailLen: req.body?.email?.length,
+    phoneLen: req.body?.phone?.length,
+    messageLen: req.body?.message?.length,
+  });
+  return res.status(status).json({ message: publicMessage });
+};
+
 const validateMailInput = (req, res, next) => {
   const { name, email, phone, message, surname } = req.body;
 
   // Honeypot: real users never fill this hidden field.
   // Respond with a fake success so bots don't learn to skip it.
   if (surname) {
-    return res.status(200).json({ message: "Mensaje enviado" });
+    return reject(req, res, 200, "honeypot", "Mensaje enviado");
   }
 
   if (!name || !email || !message) {
-    return res.status(400).json({ message: "Faltan campos requeridos" });
+    return reject(req, res, 400, "missing-fields", "Faltan campos requeridos");
   }
 
   if (
@@ -70,29 +81,29 @@ const validateMailInput = (req, res, next) => {
     typeof message !== "string" ||
     (phone !== undefined && typeof phone !== "string")
   ) {
-    return res.status(400).json({ message: "Formato de datos inválido" });
+    return reject(req, res, 400, "bad-types", "Formato de datos inválido");
   }
 
   if (name.length > 100 || message.length > 3000 || email.length > 200) {
-    return res.status(400).json({ message: "Datos demasiado largos" });
+    return reject(req, res, 400, "too-long", "Datos demasiado largos");
   }
 
   if (!EMAIL_REGEX.test(email)) {
-    return res.status(400).json({ message: "Email inválido" });
+    return reject(req, res, 400, "bad-email", "Email inválido");
   }
 
   if (phone && !PHONE_REGEX.test(phone)) {
-    return res.status(400).json({ message: "Teléfono inválido" });
+    return reject(req, res, 400, "bad-phone", "Teléfono inválido");
   }
 
   // Header injection guard: newlines in fields that end up in mail headers/body.
   if (/[\r\n]/.test(name) || /[\r\n]/.test(email)) {
-    return res.status(400).json({ message: "Datos inválidos" });
+    return reject(req, res, 400, "header-injection", "Datos inválidos");
   }
 
   if (looksLikeGibberish(name) || looksLikeGibberish(message)) {
     // Pretend success so the bot doesn't adapt its payload.
-    return res.status(200).json({ message: "Mensaje enviado" });
+    return reject(req, res, 200, "gibberish", "Mensaje enviado");
   }
 
   next();
@@ -107,6 +118,9 @@ const verifyCaptcha = async (req, res, next) => {
 
   const token = req.body.captchaToken;
   if (!token) {
+    console.warn("[mail-validation] rejected (missing-captcha-token)", {
+      bodyKeys: Object.keys(req.body || {}),
+    });
     return res.status(400).json({ message: "Falta verificación captcha" });
   }
 
@@ -125,10 +139,15 @@ const verifyCaptcha = async (req, res, next) => {
     );
     const data = await response.json();
     if (!data.success) {
+      console.warn(
+        "[mail-validation] rejected (captcha-verification-failed)",
+        data["error-codes"]
+      );
       return res.status(400).json({ message: "Verificación captcha fallida" });
     }
     next();
   } catch (err) {
+    console.error("[mail-validation] captcha verification errored", err);
     return res.status(502).json({ message: "No se pudo verificar el captcha" });
   }
 };
