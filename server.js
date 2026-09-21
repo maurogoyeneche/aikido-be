@@ -6,6 +6,11 @@ const APP_PORT = process.env.APP_PORT || 3001;
 const app = express();
 const cors = require("cors");
 
+// Vercel sits in front of the app as a single reverse proxy, so trust
+// only that one hop's X-Forwarded-For — needed for express-rate-limit
+// (and req.ip in general) to see the real client IP instead of Vercel's.
+app.set("trust proxy", 1);
+
 const allowedOrigins = (process.env.FRONTEND_URL || "")
   .split(",")
   .map((origin) => origin.trim())
