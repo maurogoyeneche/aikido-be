@@ -63,7 +63,11 @@ const reject = (req, res, status, reason, publicMessage) => {
 };
 
 const validateMailInput = (req, res, next) => {
-  const { name, email, phone, message, surname } = req.body;
+  const { name, email, message, surname } = req.body;
+  // A number input left empty can serialize as null (JSON.stringify(NaN)),
+  // not "" — treat any non-string phone as "not provided".
+  const phone = typeof req.body.phone === "string" ? req.body.phone : "";
+  req.body.phone = phone;
 
   // Honeypot: real users never fill this hidden field.
   // Respond with a fake success so bots don't learn to skip it.
@@ -78,8 +82,7 @@ const validateMailInput = (req, res, next) => {
   if (
     typeof name !== "string" ||
     typeof email !== "string" ||
-    typeof message !== "string" ||
-    (phone !== undefined && typeof phone !== "string")
+    typeof message !== "string"
   ) {
     return reject(req, res, 400, "bad-types", "Formato de datos inválido");
   }
